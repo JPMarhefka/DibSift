@@ -233,14 +233,16 @@ async function analyzeListingsWithGemini(payload) {
     throw new Error(`Gemini analysis is limited to ${MAX_ANALYSIS_LISTINGS} listings at a time.`);
   }
 
+  const compactListings = listings.map(compactListingForGemini);
   const requestBody = buildGeminiRequestBody({
     shoppingGoal,
-    listings: listings.map(compactListingForGemini)
+    listings: compactListings
   });
 
   const result = await runGeminiAnalysisWithFallback(settings.apiKey, requestBody);
+  const cleanedAnalysis = normalizeAnalysisDealTerms(result.analysis, compactListings);
   const enrichedAnalysis = {
-    ...result.analysis,
+    ...cleanedAnalysis,
     model: result.model,
     shoppingGoal,
     listingCount: listings.length,
@@ -325,6 +327,9 @@ function buildGeminiRequestBody(payload) {
               "Do not invent details. Mark uncertainty clearly. Use the user's goal to infer category-specific buying factors.",
               "Rank the best three listings and include seller messages that sound natural, concise, and specific.",
               "Use score only as the overall buy score on a 0.0 to 10.0 scale, not a 0 to 1 scale. Use one decimal place when it helps distinguish close listings.",
+              "For suggestedOffer, give an opening offer below the asking price when an asking price is known.",
+              "For maxPrice, give the highest price the buyer should pay, usually at or below the asking price.",
+              "For sellerMessage, write a direct message to the seller that includes the suggested offer and 1-2 important verification questions.",
               "",
               "Input JSON:",
               JSON.stringify(payload)
@@ -365,10 +370,19 @@ function buildAnalysisSchema() {
       pros: stringArray,
       cons: stringArray,
       risks: stringArray,
-      suggestedOffer: { type: "string" },
-      maxPrice: { type: "string" },
+      suggestedOffer: {
+        type: "string",
+        description: "Opening offer below asking price when asking price is known."
+      },
+      maxPrice: {
+        type: "string",
+        description: "Highest price the buyer should pay, usually at or below asking price."
+      },
       sellerQuestions: stringArray,
-      sellerMessage: { type: "string" },
+      sellerMessage: {
+        type: "string",
+        description: "Direct seller message including the suggested offer and 1-2 verification questions."
+      },
       url: { type: "string" }
     },
     required: [
@@ -453,6 +467,121 @@ function parseGeminiAnalysis(text) {
   } catch {
     throw new Error("Gemini returned analysis that was not valid JSON.");
   }
+}
+
+function normalizeAnalysisDealTerms(analysis, listings) {
+  const listingsById = new Map(
+    listings.map((listing) => [String(listing.listingId || ""), listing])
+  );
+
+  return {
+    ...analysis,
+    topItems: (analysis.topItems || []).map((item) =>
+      normalizeTopItemDealTerms(item, listingsById.get(String(item.listingId || "")))
+    )
+  };
+}
+
+function normalizeTopItemDealTerms(item, listing) {
+  const askingPrice = parseMoneyAmount(listing?.price);
+  const offerPrice = parseMoneyAmount(item.suggestedOffer);
+  const rawMaxPrice = parseMoneyAmount(item.maxPrice);
+
+  let normalizedOffer = offerPrice;
+  let normalizedMax = rawMaxPrice;
+
+  if (askingPrice !== null) {
+    if (normalizedOffer === null || normalizedOffer >= askingPrice) {
+      normalizedOffer = calculateOpeningOffer(askingPrice);
+    }
+
+    if (normalizedMax === null || normalizedMax <= normalizedOffer) {
+      normalizedMax = askingPrice;
+    }
+
+    if (normalizedMax > askingPrice) {
+      normalizedMax = askingPrice;
+    }
+  }
+
+  const suggestedOffer =
+    normalizedOffer !== null ? formatMoneyAmount(normalizedOffer) : item.suggestedOffer;
+  const maxPrice = normalizedMax !== null ? formatMoneyAmount(normalizedMax) : item.maxPrice;
+
+  return {
+    ...item,
+    suggestedOffer,
+    maxPrice,
+    sellerMessage: normalizeSellerMessage({
+      item,
+      listing,
+      suggestedOffer
+    })
+  };
+}
+
+function calculateOpeningOffer(askingPrice) {
+  const discounted = Math.floor(askingPrice * 0.85);
+  return Math.max(0, Math.min(discounted, askingPrice - 1));
+}
+
+function normalizeSellerMessage({ item, listing, suggestedOffer }) {
+  const originalMessage = normalizeInlineText(item.sellerMessage || "");
+  const questions = Array.isArray(item.sellerQuestions)
+    ? item.sellerQuestions.map(normalizeInlineText).filter(Boolean).slice(0, 2)
+    : [];
+
+  if (isUsableSellerMessage(originalMessage, suggestedOffer, questions)) {
+    return originalMessage;
+  }
+
+  const fallbackQuestion = "Is it still available?";
+  const messageQuestions = questions.length > 0 ? questions : [fallbackQuestion];
+  return [
+    "Hi, is this still available?",
+    ...messageQuestions.filter((question) => question !== fallbackQuestion),
+    suggestedOffer ? `Would you be willing to take ${suggestedOffer} for it?` : ""
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function isUsableSellerMessage(message, suggestedOffer, questions) {
+  if (!message) {
+    return false;
+  }
+
+  const lowerMessage = message.toLowerCase();
+  const speaksToSeller =
+    /\b(hi|hello|hey)\b/i.test(message) ||
+    /\b(you|your|available|would you|can you|could you)\b/i.test(message);
+  const includesOffer = !suggestedOffer || message.includes(suggestedOffer);
+  const includesQuestion =
+    message.includes("?") ||
+    questions.some((question) => lowerMessage.includes(question.toLowerCase().replace(/\?$/, "")));
+
+  return speaksToSeller && includesOffer && includesQuestion;
+}
+
+function parseMoneyAmount(value) {
+  const match = String(value || "").match(/\$?\s*([\d,]+)(?:\.(\d{1,2}))?/);
+  if (!match) {
+    return null;
+  }
+
+  const dollars = Number(match[1].replace(/,/g, ""));
+  const cents = match[2] ? Number(`0.${match[2].padEnd(2, "0")}`) : 0;
+  const amount = dollars + cents;
+  return Number.isFinite(amount) ? amount : null;
+}
+
+function formatMoneyAmount(value) {
+  if (!Number.isFinite(value)) {
+    return "";
+  }
+
+  const rounded = Math.round(value);
+  return `$${rounded.toLocaleString("en-US")}`;
 }
 
 function formatGeminiError(status, data) {
