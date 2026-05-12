@@ -13,8 +13,10 @@ const saveGeminiSettingsButton = document.getElementById("save-gemini-settings")
 const clearGeminiSettingsButton = document.getElementById("clear-gemini-settings");
 const saveButton = document.getElementById("save-current");
 const analyzeGeminiButton = document.getElementById("analyze-gemini");
-const selectNewestButton = document.getElementById("select-newest");
+const clearAiResponseButton = document.getElementById("clear-ai-response");
+const selectAllButton = document.getElementById("select-all");
 const removeLastButton = document.getElementById("remove-last");
+const copyPromptButton = document.getElementById("copy-prompt");
 const exportButton = document.getElementById("export-csv");
 const downloadReportButton = document.getElementById("download-report");
 const clearButton = document.getElementById("clear-listings");
@@ -42,8 +44,10 @@ addSafeListener(saveGeminiSettingsButton, "click", saveGeminiSettings);
 addSafeListener(clearGeminiSettingsButton, "click", clearGeminiSettings);
 addSafeListener(saveButton, "click", saveCurrentListing);
 addSafeListener(analyzeGeminiButton, "click", analyzeSelectedListings);
-addSafeListener(selectNewestButton, "click", selectNewestListings);
+addSafeListener(clearAiResponseButton, "click", clearAiResponse);
+addSafeListener(selectAllButton, "click", selectAllListings);
 addSafeListener(removeLastButton, "click", removeLastListing);
+addSafeListener(copyPromptButton, "click", copyAnalysisPrompt);
 addSafeListener(exportButton, "click", exportCsv);
 addSafeListener(downloadReportButton, "click", downloadTextReport);
 addSafeListener(clearButton, "click", clearListings);
@@ -252,6 +256,17 @@ async function saveGeminiSettingsForAnalysis() {
   }
 }
 
+async function clearAiResponse() {
+  try {
+    latestAnalysis = null;
+    renderAnalysis(null);
+    await chrome.storage.local.remove(LATEST_ANALYSIS_KEY);
+    setStatus("Cleared AI response.");
+  } catch (error) {
+    showAlert(error.message, "error");
+  }
+}
+
 async function copyAllListings() {
   const listings = await getHydratedListings();
   if (listings.length === 0) {
@@ -402,13 +417,27 @@ async function getListings() {
   return Array.isArray(result[STORAGE_KEY]) ? result[STORAGE_KEY] : [];
 }
 
-function selectNewestListings() {
-  selectedListingIds = new Set(
-    currentListings.slice(-MAX_SELECTED_LISTINGS).map((listing) => listing.listingId)
-  );
+function selectAllListings() {
+  const allSelected =
+    currentListings.length > 0 &&
+    currentListings.every((listing) => selectedListingIds.has(listing.listingId));
+
+  if (allSelected) {
+    selectedListingIds.clear();
+    renderComparison(currentListings);
+    updateSelectionState();
+    setStatus("Deselected all listings.");
+    return;
+  }
+
+  selectedListingIds = new Set(currentListings.map((listing) => listing.listingId));
   renderComparison(currentListings);
   updateSelectionState();
-  setStatus(`Selected newest ${selectedListingIds.size} listing${selectedListingIds.size === 1 ? "" : "s"}.`);
+  if (selectedListingIds.size > MAX_SELECTED_LISTINGS) {
+    setStatus(`Selected all ${selectedListingIds.size} listings. Uncheck down to ${MAX_SELECTED_LISTINGS} or fewer for Gemini analysis.`);
+    return;
+  }
+  setStatus(`Selected all ${selectedListingIds.size} listing${selectedListingIds.size === 1 ? "" : "s"}.`);
 }
 
 function clearSelectedListings() {
@@ -567,13 +596,14 @@ function renderAnalysis(analysis) {
 
   resultsSummaryElement.textContent = analysis.summary || "Gemini ranked your selected listings.";
   analysisModelElement.textContent = analysis.model || "Gemini";
+  const scoreScale = getAnalysisScoreScale(analysis);
 
   analysis.topItems.slice(0, 3).forEach((item, index) => {
-    aiResultsElement.append(buildResultCard(item, index));
+    aiResultsElement.append(buildResultCard(item, index, scoreScale));
   });
 
   if (Array.isArray(analysis.allItems) && analysis.allItems.length > 0) {
-    aiResultsElement.append(buildAllItemsSummary(analysis.allItems));
+    aiResultsElement.append(buildAllItemsSummary(analysis.allItems, scoreScale));
   }
 }
 
@@ -588,7 +618,7 @@ function renderAnalysisLoading() {
   aiResultsElement.append(loader);
 }
 
-function buildResultCard(item, index) {
+function buildResultCard(item, index, scoreScale) {
   const details = document.createElement("details");
   details.className = "result-card reveal-card";
   details.open = index === 0;
@@ -609,7 +639,7 @@ function buildResultCard(item, index) {
 
   const verdict = document.createElement("span");
   verdict.className = "result-verdict";
-  verdict.textContent = `${formatScore(item.score)} | ${item.verdict || "Review"}`;
+  verdict.textContent = `${formatScore(item.score, scoreScale)} | ${item.verdict || "Review"}`;
 
   titleWrap.append(title, verdict);
   summary.append(rank, titleWrap);
@@ -673,7 +703,7 @@ function buildResultCard(item, index) {
   return details;
 }
 
-function buildAllItemsSummary(items) {
+function buildAllItemsSummary(items, scoreScale) {
   const wrapper = document.createElement("details");
   wrapper.className = "all-items-summary";
 
@@ -683,7 +713,7 @@ function buildAllItemsSummary(items) {
   const list = document.createElement("ol");
   items.forEach((item) => {
     const row = document.createElement("li");
-    row.textContent = `${item.title || "Listing"} - ${formatScore(item.score)} - ${item.verdict || "Review"} (${item.confidence || "confidence unclear"})`;
+    row.textContent = `${item.title || "Listing"} - ${formatScore(item.score, scoreScale)} - ${item.verdict || "Review"} (${item.confidence || "confidence unclear"})`;
     list.append(row);
   });
 
@@ -724,10 +754,21 @@ function buildTextList(title, values) {
 function updateSelectionState() {
   const count = selectedListingIds.size;
   if (selectionSummaryElement) {
-    selectionSummaryElement.textContent = `${count} selected, ${MAX_SELECTED_LISTINGS} max for Gemini.`;
+    selectionSummaryElement.textContent =
+      count > MAX_SELECTED_LISTINGS
+        ? `${count} selected. Uncheck down to ${MAX_SELECTED_LISTINGS} or fewer for Gemini.`
+        : `${count} selected, ${MAX_SELECTED_LISTINGS} max for Gemini.`;
   }
   if (analyzeGeminiButton) {
     analyzeGeminiButton.disabled = isAnalyzing || count === 0 || count > MAX_SELECTED_LISTINGS;
+  }
+  if (selectAllButton) {
+    const allSelected =
+      currentListings.length > 0 &&
+      currentListings.every((listing) => selectedListingIds.has(listing.listingId));
+    selectAllButton.disabled = currentListings.length === 0;
+    selectAllButton.textContent = allSelected ? "Deselect All" : "Select All";
+    selectAllButton.setAttribute("aria-pressed", allSelected ? "true" : "false");
   }
 }
 
@@ -835,7 +876,9 @@ function buildAnalysisPrompt(goal, listings) {
     "* Identify the likely product type, brand/model if available, condition, included items, location, and key unknowns.",
     "* Call out missing details that could change the buying decision.",
     "",
-    "Step 2: Score every listing from 1 to 10",
+    "Step 2: Score every listing from 0.0 to 10.0",
+    "* Use decimal tenths when useful, such as 8.7 or 9.3, to distinguish close listings.",
+    "* Do not use a 0 to 1 scale. 10.0 means exceptional for my goal, and 0.0 means avoid.",
     "* Goal match score",
     "* Price/value score",
     "* Condition/risk score",
@@ -902,6 +945,7 @@ function formatListingForGemini(listing) {
 }
 
 function formatGeminiReport(analysis, listings) {
+  const scoreScale = getAnalysisScoreScale(analysis);
   return [
     "Gemini Marketplace Analysis",
     `Model: ${analysis.model || ""}`,
@@ -915,7 +959,7 @@ function formatGeminiReport(analysis, listings) {
     ...(analysis.topItems || []).map((item) =>
       [
         `#${item.rank}: ${item.title}`,
-        `Score: ${formatScore(item.score)}`,
+        `Score: ${formatScore(item.score, scoreScale)}`,
         `Verdict: ${item.verdict || ""}`,
         `Suggested offer: ${item.suggestedOffer || ""}`,
         `Max price: ${item.maxPrice || ""}`,
@@ -1000,12 +1044,31 @@ function formatMoney(value) {
   return `$${Math.round(value).toLocaleString("en-US")}`;
 }
 
-function formatScore(value) {
+function getAnalysisScoreScale(analysis) {
+  const scores = [
+    ...(Array.isArray(analysis?.topItems) ? analysis.topItems : []),
+    ...(Array.isArray(analysis?.allItems) ? analysis.allItems : [])
+  ]
+    .map((item) => Number(item?.score))
+    .filter(Number.isFinite);
+
+  if (scores.length === 0) {
+    return 1;
+  }
+
+  const hasPositiveScore = scores.some((score) => score > 0);
+  const looksNormalized = hasPositiveScore && scores.every((score) => score >= 0 && score <= 1);
+  return looksNormalized ? 10 : 1;
+}
+
+function formatScore(value, scale = 1) {
   const number = Number(value);
   if (!Number.isFinite(number)) {
     return "No score";
   }
-  return `${Math.round(number * 10) / 10}/10`;
+  const scaled = number * scale;
+  const clamped = Math.min(10, Math.max(0, scaled));
+  return `${clamped.toFixed(1)}/10`;
 }
 
 function escapeCsvCell(value) {
@@ -1073,6 +1136,7 @@ function showAlert(message, type = "info") {
   alertBoxElement.textContent = message || "";
   alertBoxElement.className = `alert alert-${normalizedType}`;
   alertBoxElement.hidden = !message;
+  document.body.classList.toggle("has-alert", Boolean(message));
 
   if (message) {
     alertClearTimer = setTimeout(clearAlert, 5000);
@@ -1087,6 +1151,7 @@ function clearAlert() {
   alertBoxElement.textContent = "";
   alertBoxElement.hidden = true;
   alertBoxElement.className = "alert";
+  document.body.classList.remove("has-alert");
 }
 
 function setBusy(isBusy) {
@@ -1094,7 +1159,22 @@ function setBusy(isBusy) {
     saveButton.disabled = isBusy;
   }
   if (analyzeGeminiButton) {
-    analyzeGeminiButton.disabled = isBusy || selectedListingIds.size === 0;
+    analyzeGeminiButton.disabled =
+      isBusy ||
+      selectedListingIds.size === 0 ||
+      selectedListingIds.size > MAX_SELECTED_LISTINGS;
+  }
+  if (clearAiResponseButton) {
+    clearAiResponseButton.disabled = isBusy;
+  }
+  if (removeLastButton) {
+    removeLastButton.disabled = isBusy;
+  }
+  if (copyPromptButton) {
+    copyPromptButton.disabled = isBusy;
+  }
+  if (selectAllButton) {
+    selectAllButton.disabled = isBusy || currentListings.length === 0;
   }
   if (saveGeminiSettingsButton) {
     saveGeminiSettingsButton.disabled = isBusy;

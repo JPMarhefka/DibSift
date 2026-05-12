@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "Deal Scout",
-  "version": "0.8.0",
+  "name": "DibSift",
+  "version": "1.0.0",
   "description": "Save, compare, and analyze visible Facebook Marketplace listings with Gemini-assisted shopping decisions.",
   "icons": {
     "16": "icon1.png",
@@ -22,7 +22,7 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "Deal Scout",
+    "default_title": "Facebook Deal Finder - DibSift",
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icon1.png",

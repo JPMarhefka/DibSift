@@ -3,15 +3,15 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Deal Scout</title>
+    <title>DibSift</title>
     <link rel="stylesheet" href="popup.css">
   </head>
   <body>
     <main>
       <header class="popup-header">
         <div>
-          <p class="eyebrow">AI Market Analysis Tool</p>
-          <h1>Deal Scout</h1>
+          <p class="eyebrow">AI Powered Facebook Marketplace Analysis Tool</p>
+          <h1>DibSift</h1>
         </div>
         <div class="header-actions">
           <span class="count-pill"><span id="listing-count">0</span>&nbsp;saved</span>
@@ -31,28 +31,27 @@
           <div class="section-heading">
             <div>
               <h2>Gemini AI</h2>
-              <p>Model: <strong>gemini-2.5-flash</strong></p>
+              <!--<p>Fallback: <strong>gemini-2.5-flash → gemini-2.5-flash-lite</strong></p>!-->
             </div>
             <div class="key-actions">
               <button id="save-gemini-settings" class="quiet-button" type="button">Save Key</button>
               <button id="clear-gemini-settings" class="quiet-button danger" type="button">Clear Key</button>
             </div>
           </div>
-          <label for="gemini-api-key">Google AI Studio API key</label>
+          <label for="gemini-api-key">Gemini API key</label>
           <input
             id="gemini-api-key"
             type="password"
             autocomplete="off"
             placeholder="Paste your Gemini API key"
           >
-          <p class="note">Stored locally in this Chrome profile for testing.</p>
+          <p class="note">Stored locally in this Chrome profile</p>
         </div>
 
         <div class="settings-section">
-          <h2>Saved Item Tools</h2>
+          <h2>Tools</h2>
           <div class="settings-actions">
-            <button id="select-newest" class="quiet-button" type="button">Select Newest 10</button>
-            <button id="remove-last" class="quiet-button" type="button">Remove Last</button>
+            <button id="copy-prompt" class="quiet-button" type="button">Copy Prompt</button>
             <button id="export-csv" class="quiet-button" type="button">Export CSV</button>
             <button id="download-report" class="quiet-button" type="button">Export Report</button>
             <button id="clear-listings" class="quiet-button danger" type="button">Clear Saved</button>
@@ -71,7 +70,9 @@
 
       <section class="primary-actions" aria-label="Listing actions">
         <button id="save-current" class="secondary-button" type="button">Save Current Listing</button>
+        <button id="remove-last" class="secondary-button danger" type="button">Remove Previous Listing</button>
         <button id="analyze-gemini" class="primary-button" type="button">Analyze with Gemini</button>
+        <button id="clear-ai-response" class="secondary-button" type="button">Clear AI Response</button>
       </section>
 
       <section class="panel top-picks" aria-label="Gemini top results">
@@ -91,7 +92,10 @@
             <h2>Saved Items</h2>
             <p id="selection-summary">Select up to 10 for AI analysis.</p>
           </div>
-          <span id="comparison-summary" class="mini-pill">No items</span>
+          <div class="saved-items-actions">
+            <button id="select-all" class="quiet-button" type="button" aria-pressed="false">Select All</button>
+            <span id="comparison-summary" class="mini-pill">No items</span>
+          </div>
         </div>
         <div id="comparison-list" class="comparison-list" aria-live="polite"></div>
       </section>

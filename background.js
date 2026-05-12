@@ -1,7 +1,9 @@
 const STORAGE_KEY = "marketplaceCopyHelper.listings";
 const GEMINI_SETTINGS_KEY = "marketplaceCopyHelper.geminiSettings";
 const LATEST_ANALYSIS_KEY = "marketplaceCopyHelper.latestGeminiAnalysis";
-const GEMINI_MODEL = "gemini-2.5-flash";
+const GEMINI_MODEL_FALLBACKS = ["gemini-2.5-flash", "gemini-2.5-flash-lite"];
+const GEMINI_MODEL = GEMINI_MODEL_FALLBACKS[0];
+const GEMINI_503_RETRY_DELAY_MS = 900;
 const MAX_ANALYSIS_LISTINGS = 10;
 
 chrome.runtime.onInstalled.addListener(updateBadgeCount);
@@ -76,7 +78,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           settings: {
             hasApiKey: Boolean(settings.apiKey),
             apiKey: settings.apiKey || "",
-            model: GEMINI_MODEL
+            model: GEMINI_MODEL,
+            fallbackModels: GEMINI_MODEL_FALLBACKS
           }
         })
       )
@@ -193,7 +196,8 @@ async function getGeminiSettings() {
   const settings = result[GEMINI_SETTINGS_KEY] || {};
   return {
     apiKey: typeof settings.apiKey === "string" ? settings.apiKey.trim() : "",
-    model: GEMINI_MODEL
+    model: GEMINI_MODEL,
+    fallbackModels: GEMINI_MODEL_FALLBACKS
   };
 }
 
@@ -203,6 +207,7 @@ async function saveGeminiSettings(settings) {
     [GEMINI_SETTINGS_KEY]: {
       apiKey,
       model: GEMINI_MODEL,
+      fallbackModels: GEMINI_MODEL_FALLBACKS,
       savedAt: new Date().toISOString()
     }
   });
@@ -233,19 +238,69 @@ async function analyzeListingsWithGemini(payload) {
     listings: listings.map(compactListingForGemini)
   });
 
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+  const result = await runGeminiAnalysisWithFallback(settings.apiKey, requestBody);
+  const enrichedAnalysis = {
+    ...result.analysis,
+    model: result.model,
+    shoppingGoal,
+    listingCount: listings.length,
+    createdAt: new Date().toISOString()
+  };
+
+  await chrome.storage.local.set({ [LATEST_ANALYSIS_KEY]: enrichedAnalysis });
+  return { ok: true, analysis: enrichedAnalysis };
+}
+
+async function runGeminiAnalysisWithFallback(apiKey, requestBody) {
+  const attemptedModels = [];
+  let lastError = null;
+
+  for (const model of GEMINI_MODEL_FALLBACKS) {
+    attemptedModels.push(model);
+
+    try {
+      return await requestGeminiAnalysis(model, apiKey, requestBody);
+    } catch (error) {
+      lastError = error;
+
+      if (error.status === 503) {
+        await delay(GEMINI_503_RETRY_DELAY_MS);
+        try {
+          return await requestGeminiAnalysis(model, apiKey, requestBody);
+        } catch (retryError) {
+          lastError = retryError;
+          if (!shouldTryNextGeminiModel(retryError)) {
+            throw retryError;
+          }
+          continue;
+        }
+      }
+
+      if (!shouldTryNextGeminiModel(error)) {
+        throw error;
+      }
+    }
+  }
+
+  throw new Error(formatGeminiFallbackError(attemptedModels, lastError));
+}
+
+async function requestGeminiAnalysis(model, apiKey, requestBody) {
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
   const response = await fetch(endpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-goog-api-key": settings.apiKey
+      "x-goog-api-key": apiKey
     },
     body: JSON.stringify(requestBody)
   });
 
   const data = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new Error(formatGeminiError(response.status, data));
+    const error = new Error(formatGeminiError(response.status, data));
+    error.status = response.status;
+    throw error;
   }
 
   const text = extractGeminiText(data);
@@ -254,16 +309,7 @@ async function analyzeListingsWithGemini(payload) {
   }
 
   const analysis = parseGeminiAnalysis(text);
-  const enrichedAnalysis = {
-    ...analysis,
-    model: GEMINI_MODEL,
-    shoppingGoal,
-    listingCount: listings.length,
-    createdAt: new Date().toISOString()
-  };
-
-  await chrome.storage.local.set({ [LATEST_ANALYSIS_KEY]: enrichedAnalysis });
-  return { ok: true, analysis: enrichedAnalysis };
+  return { analysis, model };
 }
 
 function buildGeminiRequestBody(payload) {
@@ -278,6 +324,7 @@ function buildGeminiRequestBody(payload) {
               "Compare the selected Facebook Marketplace listings and return only JSON matching the schema.",
               "Do not invent details. Mark uncertainty clearly. Use the user's goal to infer category-specific buying factors.",
               "Rank the best three listings and include seller messages that sound natural, concise, and specific.",
+              "Use score only as the overall buy score on a 0.0 to 10.0 scale, not a 0 to 1 scale. Use one decimal place when it helps distinguish close listings.",
               "",
               "Input JSON:",
               JSON.stringify(payload)
@@ -306,7 +353,12 @@ function buildAnalysisSchema() {
       rank: { type: "integer" },
       listingId: { type: "string" },
       title: { type: "string" },
-      score: { type: "number" },
+      score: {
+        type: "number",
+        minimum: 0,
+        maximum: 10,
+        description: "Overall buy score from 0.0 to 10.0, not 0 to 1."
+      },
       verdict: { type: "string" },
       confidence: { type: "string" },
       whyItRanked: { type: "string" },
@@ -353,7 +405,12 @@ function buildAnalysisSchema() {
           properties: {
             listingId: { type: "string" },
             title: { type: "string" },
-            score: { type: "number" },
+            score: {
+              type: "number",
+              minimum: 0,
+              maximum: 10,
+              description: "Overall buy score from 0.0 to 10.0, not 0 to 1."
+            },
             verdict: { type: "string" },
             confidence: { type: "string" }
           },
@@ -409,7 +466,24 @@ function formatGeminiError(status, data) {
   if (status === 429) {
     return "Gemini rate limit reached. Wait a bit and try again with fewer listings.";
   }
+  if (status === 503) {
+    return "Gemini service is temporarily overloaded or unavailable.";
+  }
   return `Gemini error ${status}: ${message}`;
+}
+
+function shouldTryNextGeminiModel(error) {
+  return error?.status === 429 || error?.status === 503;
+}
+
+function formatGeminiFallbackError(attemptedModels, lastError) {
+  const modelList = attemptedModels.join(" -> ");
+  const lastMessage = lastError?.message || "Gemini request failed.";
+  return `Gemini could not complete the analysis after trying ${modelList}. Last error: ${lastMessage}`;
+}
+
+function delay(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 async function updateBadgeCount(existingCount) {
