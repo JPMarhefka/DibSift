@@ -1,4 +1,4 @@
-# Deal Scout
+# DibSift
 
 A Chrome Manifest V3 extension for manually saving visible Facebook Marketplace listings, comparing saved items, and analyzing up to 10 selected items with Gemini.
 
