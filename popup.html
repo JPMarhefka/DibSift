@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Deal Scout</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main>
+      <header class="popup-header">
+        <div>
+          <p class="eyebrow">AI Market Analysis Tool</p>
+          <h1>Deal Scout</h1>
+        </div>
+        <div class="header-actions">
+          <span class="count-pill"><span id="listing-count">0</span>&nbsp;saved</span>
+          <button
+            id="settings-toggle"
+            class="icon-button"
+            type="button"
+            aria-label="Open settings"
+            aria-expanded="false"
+            aria-controls="settings-panel"
+          >⚙</button>
+        </div>
+      </header>
+
+      <section id="settings-panel" class="settings-panel" aria-label="Settings" hidden>
+        <div class="settings-section">
+          <div class="section-heading">
+            <div>
+              <h2>Gemini AI</h2>
+              <p>Model: <strong>gemini-2.5-flash</strong></p>
+            </div>
+            <div class="key-actions">
+              <button id="save-gemini-settings" class="quiet-button" type="button">Save Key</button>
+              <button id="clear-gemini-settings" class="quiet-button danger" type="button">Clear Key</button>
+            </div>
+          </div>
+          <label for="gemini-api-key">Google AI Studio API key</label>
+          <input
+            id="gemini-api-key"
+            type="password"
+            autocomplete="off"
+            placeholder="Paste your Gemini API key"
+          >
+          <p class="note">Stored locally in this Chrome profile for testing.</p>
+        </div>
+
+        <div class="settings-section">
+          <h2>Saved Item Tools</h2>
+          <div class="settings-actions">
+            <button id="select-newest" class="quiet-button" type="button">Select Newest 10</button>
+            <button id="remove-last" class="quiet-button" type="button">Remove Last</button>
+            <button id="export-csv" class="quiet-button" type="button">Export CSV</button>
+            <button id="download-report" class="quiet-button" type="button">Export Report</button>
+            <button id="clear-listings" class="quiet-button danger" type="button">Clear Saved</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="goal-card" aria-label="Shopping goal">
+        <label for="shopping-goal">What are you looking for today?</label>
+        <textarea
+          id="shopping-goal"
+          rows="3"
+          placeholder="Example: used couch under $300, MacBook for college, dorm desk, reliable appliance for an apartment"
+        ></textarea>
+      </section>
+
+      <section class="primary-actions" aria-label="Listing actions">
+        <button id="save-current" class="secondary-button" type="button">Save Current Listing</button>
+        <button id="analyze-gemini" class="primary-button" type="button">Analyze with Gemini</button>
+      </section>
+
+      <section class="panel top-picks" aria-label="Gemini top results">
+        <div class="section-heading">
+          <div>
+            <h2>AI Top Picks</h2>
+            <p id="results-summary">Run Gemini analysis to reveal the top 3.</p>
+          </div>
+          <span id="analysis-model" class="mini-pill">Not run</span>
+        </div>
+        <div id="ai-results" class="ai-results" aria-live="polite"></div>
+      </section>
+
+      <section class="panel saved-items" aria-label="Saved listing comparison">
+        <div class="section-heading">
+          <div>
+            <h2>Saved Items</h2>
+            <p id="selection-summary">Select up to 10 for AI analysis.</p>
+          </div>
+          <span id="comparison-summary" class="mini-pill">No items</span>
+        </div>
+        <div id="comparison-list" class="comparison-list" aria-live="polite"></div>
+      </section>
+
+      <div id="alert-box" class="alert" role="status" aria-live="polite" hidden></div>
+    </main>
+
+    <script src="listingParser.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>

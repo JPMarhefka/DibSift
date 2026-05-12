@@ -1,0 +1,57 @@
+{
+  "manifest_version": 3,
+  "name": "Deal Scout",
+  "version": "0.8.0",
+  "description": "Save, compare, and analyze visible Facebook Marketplace listings with Gemini-assisted shopping decisions.",
+  "icons": {
+    "16": "icon1.png",
+    "32": "icon1.png",
+    "48": "icon1.png",
+    "96": "icon1.png",
+    "128": "icon1.png"
+  },
+  "permissions": ["storage", "downloads", "activeTab", "scripting"],
+  "host_permissions": [
+    "https://*.facebook.com/*",
+    "https://generativelanguage.googleapis.com/*"
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; img-src 'self' https: data:; connect-src https://generativelanguage.googleapis.com"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Deal Scout",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon1.png",
+      "32": "icon1.png",
+      "48": "icon1.png",
+      "96": "icon1.png"
+    }
+  },
+  "commands": {
+    "save-current-listing": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+S",
+        "mac": "Command+Shift+S"
+      },
+      "description": "Save the currently visible Facebook Marketplace listing"
+    },
+    "remove-last-listing": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+X",
+        "mac": "Command+Shift+X"
+      },
+      "description": "Remove the most recently saved Marketplace listing"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://*.facebook.com/*"],
+      "js": ["listingParser.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
