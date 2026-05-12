@@ -1,14 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "DibSift",
-  "version": "1.0.1",
+  "name": "DibSift - Facebook Deal Finder",
+  "version": "1.0.2",
   "description": "Save, compare, and analyze visible Facebook Marketplace listings with Gemini-assisted shopping decisions.",
   "icons": {
-    "16": "icon1.png",
-    "32": "icon1.png",
-    "48": "icon1.png",
-    "96": "icon1.png",
-    "128": "icon1.png"
+    "16": "icons/Dibsift-Icon-16.png",
+    "32": "icons/Dibsift-Icon-32.png",
+    "48": "icons/Dibsift-Icon-48.png",
+    "96": "icons/Dibsift-Icon-96.png",
+    "128": "icons/Dibsift-Icon-128.png"
   },
   "permissions": ["storage", "downloads", "activeTab", "scripting"],
   "host_permissions": [
@@ -22,13 +22,13 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "Facebook Deal Finder - DibSift",
+    "default_title": "DibSift",
     "default_popup": "popup.html",
     "default_icon": {
-      "16": "icon1.png",
-      "32": "icon1.png",
-      "48": "icon1.png",
-      "96": "icon1.png"
+      "16": "icons/Dibsift-Icon-16.png",
+      "32": "icons/Dibsift-Icon-32.png",
+      "48": "icons/Dibsift-Icon-48.png",
+      "96": "icons/Dibsift-Icon-96.png"
     }
   },
   "commands": {
